@@ -1,0 +1,21 @@
+[project]
+name = "learn-claude-code"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "wangxiaoxiang", email = "wangxiaoxiang@travelsky.com.cn" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+learn-claude-code = "learn_claude_code:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
