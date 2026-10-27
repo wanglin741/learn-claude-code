@@ -6,10 +6,14 @@
 """
 
 import glob
+import json
 import subprocess
+from dataclasses import asdict
 
 from .config import WORKDIR
 from .skills import SKILL_LOADER
+from .task_store import (claim_task, complete_task, create_task, list_tasks,
+                         load_task, update_task)
 
 
 def run_bash(command: str) -> str:
@@ -108,7 +112,72 @@ COMPACT_TOOL={
 
 # 注意要展开 BASE_TOOLS：API 要的是 [工具, 工具, ...]，
 # 写成 [BASE_TOOLS, COMPACT_TOOL] 会变成嵌套列表，请求直接报错。
-TOOLS = [*BASE_TOOLS, COMPACT_TOOL]
+# ---- 任务工具 ----
+# 任务系统真正的存储和依赖图在 task_store.py，这里只是"工具层"：
+# 把领域操作包成模型能调用的函数，并把结果格式化成字符串。
+# 返回值都会作为 tool_result 回给模型，所以要说人话、给 ID、给出下一步线索。
+
+
+def run_create_task(subject: str, description: str = "") -> str:
+    """新建一个任务节点。ID 由程序生成（模型不能自己编），返回给模型备用。"""
+    task = create_task(subject, description)
+    print(f"  [create] {task.subject}")
+    return f"Created {task.id}: {task.subject}"
+
+
+def run_update_task(task_id: str, addBlockedBy: list[str]) -> str:
+    """给任务加依赖。只能加在还没开工的任务上，加的时候会检查成环。"""
+    task = update_task(task_id, addBlockedBy)
+    dependencies = ", ".join(task.blockedBy) or "(none)"
+    print(f"  [update] {task.subject} blockedBy: {dependencies}")
+    return f"Updated {task.id} blockedBy: {dependencies}"
+
+
+def run_list_tasks() -> str:
+    """把全部任务排成待办清单：一眼看出状态、认领者、依赖。"""
+    tasks = list_tasks()
+    if not tasks:
+        return "No tasks. Use create_task to add some."
+    lines = []
+    for task in tasks:
+        marker = {
+            "pending": "[ ]",
+            "in_progress": "[>]",
+            "completed": "[x]",
+        }.get(task.status, "[?]")
+        dependencies = (
+            f" (blockedBy: {', '.join(task.blockedBy)})"
+            if task.blockedBy else ""
+        )
+        owner = f" [{task.owner}]" if task.owner else ""
+        lines.append(
+            f"{marker} {task.id}: {task.subject} "
+            f"[{task.status}]{owner}{dependencies}"
+        )
+    return "\n".join(lines)
+
+
+def run_get_task(task_id: str) -> str:
+    """查看单条任务的完整 JSON（含 description）。"""
+    return json.dumps(asdict(load_task(task_id)), indent=2)
+
+
+TASK_TOOLS = [
+    {"name": "create_task", "description": "Create a task and return its runtime-generated ID.",
+     "input_schema": {"type": "object", "properties": {"subject": {"type": "string"}, "description": {"type": "string"}}, "required": ["subject"], "additionalProperties": False}},
+    {"name": "update_task", "description": "Add dependencies using IDs returned by create_task.",
+     "input_schema": {"type": "object", "properties": {"task_id": {"type": "string", "pattern": "^task_[0-9a-f]{8}$"}, "addBlockedBy": {"type": "array", "items": {"type": "string", "pattern": "^task_[0-9a-f]{8}$"}, "minItems": 1}}, "required": ["task_id", "addBlockedBy"], "additionalProperties": False}},
+    {"name": "list_tasks", "description": "List tasks with status, owner, and dependencies.",
+     "input_schema": {"type": "object", "properties": {}}},
+    {"name": "get_task", "description": "Get a task by ID.",
+     "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
+    {"name": "claim_task", "description": "Claim a pending task whose dependencies are complete.",
+     "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
+    {"name": "complete_task", "description": "Complete the task claimed by this agent.",
+     "input_schema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
+]
+
+TOOLS = [*BASE_TOOLS, *TASK_TOOLS, COMPACT_TOOL]
 
 # 分发用的映射表：agent 拿到 tool_use 后按 block.name 查这里。
 # 参数 schema 里的字段名和函数形参名一一对应，所以可以直接 **block.input。
@@ -119,4 +188,10 @@ TOOL_HANDLERS = {
     "edit_file": run_edit,
     "glob": run_glob,
     "load_skill": SKILL_LOADER.load,
+    "create_task": run_create_task,
+    "update_task": run_update_task,
+    "list_tasks": run_list_tasks,
+    "get_task": run_get_task,
+    "claim_task": claim_task,
+    "complete_task": complete_task,
 }

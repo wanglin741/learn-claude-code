@@ -17,7 +17,8 @@ from .hooks import trigger_hooks
 
 
 def main() -> None:
-    print("s07: Skill Loading - catalog first, full content on demand")
+    # 这个入口把几课的内容合在一起跑：技能目录 + 上下文压缩 + 记忆 + 任务系统。
+    print("agent: skills + compaction + memory + tasks")
     print("Enter a question, press Enter to send. Type q to quit.\n")
 
     # 对话历史。agent_loop 会往里追加 assistant / tool_result 消息，
@@ -27,7 +28,7 @@ def main() -> None:
         try:
             # \001/\002 告诉 readline：中间的 ANSI 颜色码不占显示宽度，
             # 否则光标位置会算错，输入中文时尤其明显。
-            query = input("\001\033[36m\002s07 >> \001\033[0m\002")
+            query = input("\001\033[36m\002agent >> \001\033[0m\002")
         except (EOFError, KeyboardInterrupt):
             # Ctrl+C / Ctrl+D 直接退出，不打印堆栈。
             break
